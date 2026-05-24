@@ -13,7 +13,7 @@ class CommentReq(BaseModel):
 
 
 @router.post("")
-async def create_comment(request: Request, post_id: int, req: CommentReq):
+def create_comment(request: Request, post_id: int, req: CommentReq):
     user_id = getattr(request.state, "user_id", 0)
     if user_id == 0:
         return {"code": 401, "message": "未认证或Token失效"}
@@ -80,7 +80,7 @@ async def create_comment(request: Request, post_id: int, req: CommentReq):
 
 
 @router.get("")
-async def get_comments(post_id: int, page: int = 1, page_size: int = 20):
+def get_comments(post_id: int, page: int = 1, page_size: int = 20):
     if page < 1:
         page = 1
     if page_size < 1 or page_size > 100:

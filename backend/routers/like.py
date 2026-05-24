@@ -6,7 +6,7 @@ router = APIRouter(prefix="/api/posts/{post_id}/like", tags=["like"])
 
 
 @router.post("")
-async def toggle_like(request: Request, post_id: int):
+def toggle_like(request: Request, post_id: int):
     user_id = getattr(request.state, "user_id", 0)
     if user_id == 0:
         return {"code": 401, "message": "未认证或Token失效"}
@@ -46,7 +46,7 @@ async def toggle_like(request: Request, post_id: int):
 
 
 @router.get("/users")
-async def get_like_users(post_id: int):
+def get_like_users(post_id: int):
     cursor, conn = get_db_cursor()
     try:
         cursor.execute(

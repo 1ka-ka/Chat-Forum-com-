@@ -7,7 +7,7 @@ router = APIRouter(prefix="/api/user", tags=["user"])
 
 
 @router.get("/profile")
-async def get_profile(request: Request):
+def get_profile(request: Request):
     user_id = getattr(request.state, "user_id", 0)
     if user_id == 0:
         return {"code": 401, "message": "未认证或Token失效"}
@@ -24,7 +24,7 @@ async def get_profile(request: Request):
 
 
 @router.put("/profile")
-async def update_profile(
+def update_profile(
     request: Request,
     nickname: str = Form(default=""),
     avatar: UploadFile = File(default=None),
@@ -44,7 +44,7 @@ async def update_profile(
         upload_dir = "./uploads/avatars"
         os.makedirs(upload_dir, exist_ok=True)
         filepath = os.path.join(upload_dir, filename)
-        content = await avatar.read()
+        content = avatar.file.read()
         if len(content) > MAX_AVATAR_SIZE:
             return {"code": 400, "message": "头像大小超过2MB限制"}
         with open(filepath, "wb") as f:
@@ -80,7 +80,7 @@ async def update_profile(
 
 
 @router.get("/{user_id}")
-async def get_user_by_id(user_id: int):
+def get_user_by_id(user_id: int):
     cursor, conn = get_db_cursor()
     try:
         cursor.execute(

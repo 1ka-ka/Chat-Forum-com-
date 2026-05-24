@@ -5,7 +5,7 @@ router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 
 
 @router.get("")
-async def get_notifications(request: Request, page: int = 1, page_size: int = 20):
+def get_notifications(request: Request, page: int = 1, page_size: int = 20):
     user_id = getattr(request.state, "user_id", 0)
     if user_id == 0:
         return {"code": 401, "message": "未认证或Token失效"}
@@ -40,7 +40,7 @@ async def get_notifications(request: Request, page: int = 1, page_size: int = 20
 
 
 @router.get("/unread_count")
-async def get_unread_count(request: Request):
+def get_unread_count(request: Request):
     user_id = getattr(request.state, "user_id", 0)
     if user_id == 0:
         return {"code": 401, "message": "未认证或Token失效"}
@@ -54,7 +54,7 @@ async def get_unread_count(request: Request):
 
 
 @router.put("/read/{notification_id}")
-async def mark_notification_read(notification_id: int, request: Request):
+def mark_notification_read(notification_id: int, request: Request):
     user_id = getattr(request.state, "user_id", 0)
     if user_id == 0:
         return {"code": 401, "message": "未认证或Token失效"}
@@ -68,7 +68,7 @@ async def mark_notification_read(notification_id: int, request: Request):
 
 
 @router.put("/read_all")
-async def mark_all_read(request: Request):
+def mark_all_read(request: Request):
     user_id = getattr(request.state, "user_id", 0)
     if user_id == 0:
         return {"code": 401, "message": "未认证或Token失效"}

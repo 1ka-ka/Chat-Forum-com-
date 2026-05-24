@@ -5,13 +5,40 @@ from fastapi.middleware.cors import CORSMiddleware
 from routers import auth, user, post, comment, like, chat, notification
 from utils.auth import decode_token
 import os
+import logging
+from logging.handlers import RotatingFileHandler
+
+# ========== 日志配置 ==========
+# 同时输出到终端和文件，文件存放在与 Drogon 共享的 logs/ 目录
+LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+os.makedirs(LOG_DIR, exist_ok=True)
+
+logger = logging.getLogger("chatforum")
+logger.setLevel(logging.INFO)
+
+# 日志格式：时间 | 级别 | 消息
+log_format = logging.Formatter("%(asctime)s %(levelname)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+
+# 终端输出（StreamHandler）
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(log_format)
+logger.addHandler(console_handler)
+
+# 文件输出（RotatingFileHandler：按大小轮转，与 Drogon 日志放在同一目录）
+file_handler = RotatingFileHandler(
+    os.path.join(LOG_DIR, "chatforum-py.log"),
+    maxBytes=10 * 1024 * 1024,  # 10MB 轮转
+    backupCount=5,               # 保留 5 个旧文件
+    encoding="utf-8",
+)
+file_handler.setFormatter(log_format)
+logger.addHandler(file_handler)
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "frontend", "dist")
 HAS_FRONTEND = os.path.isfile(os.path.join(STATIC_DIR, "index.html"))
 
 os.makedirs("./uploads/images", exist_ok=True)
 os.makedirs("./uploads/avatars", exist_ok=True)
-os.makedirs("./logs", exist_ok=True)
 
 app = FastAPI(title="畅谈 API")
 
@@ -51,6 +78,10 @@ async def auth_middleware(request: Request, call_next):
     request.state.user_id = user_id
 
     response = await call_next(request)
+
+    # 请求日志：方法 + 路径 + 状态码 + 用户ID
+    logger.info(f"{request.method} {path} {response.status_code} user={user_id}")
+
     return response
 
 
@@ -86,13 +117,19 @@ if HAS_FRONTEND:
 
 @app.on_event("startup")
 async def startup():
-    print("=" * 50)
-    print("  畅谈 Server Starting...")
-    print(f"  API:       http://0.0.0.0:8080/api")
-    print(f"  WebSocket: ws://0.0.0.0:8080/ws/chat")
+    # 保存事件循环引用，供同步代码（like/comment）推送 WebSocket 通知
+    import asyncio
+    from utils.notification import set_event_loop
+    set_event_loop(asyncio.get_running_loop())
+
+    logger.info("=" * 50)
+    logger.info("  ChatForum Server Starting...")
+    logger.info(f"  API:       http://localhost:8080/api")
+    logger.info(f"  WebSocket: ws://localhost:8080/ws/chat")
     if HAS_FRONTEND:
-        print(f"  Frontend:  http://0.0.0.0:8080 (single server)")
+        logger.info(f"  Frontend:  http://localhost:8080")
     else:
-        print(f"  Frontend:  http://localhost:5173 (dev server needed)")
-        print(f"  Run 'build.bat' to enable single-server mode")
-    print("=" * 50)
+        logger.info(f"  Frontend:  http://localhost:5173 (dev server needed)")
+        logger.info(f"  Run 'build.bat' to enable single-server mode")
+    logger.info(f"  Log file:  {os.path.join(LOG_DIR, 'chatforum-py.log')}")
+    logger.info("=" * 50)

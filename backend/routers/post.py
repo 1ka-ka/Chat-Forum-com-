@@ -15,7 +15,7 @@ def safe_truncate(text: str, max_bytes: int = 300) -> str:
 
 
 @router.post("")
-async def create_post(
+def create_post(
     request: Request,
     title: str = Form(default=""),
     content: str = Form(default=""),
@@ -36,7 +36,7 @@ async def create_post(
             upload_dir = "./uploads/images"
             os.makedirs(upload_dir, exist_ok=True)
             filepath = os.path.join(upload_dir, filename)
-            img_content = await img.read()
+            img_content = img.file.read()
             if len(img_content) <= MAX_IMAGE_SIZE:
                 with open(filepath, "wb") as f:
                     f.write(img_content)
@@ -69,7 +69,7 @@ async def create_post(
 
 
 @router.get("")
-async def get_post_list(request: Request, page: int = 1, page_size: int = 20, search: str = ""):
+def get_post_list(request: Request, page: int = 1, page_size: int = 20, search: str = ""):
     user_id = getattr(request.state, "user_id", 0)
     if page < 1:
         page = 1
@@ -125,7 +125,7 @@ async def get_post_list(request: Request, page: int = 1, page_size: int = 20, se
 
 
 @router.get("/{post_id}")
-async def get_post_by_id(post_id: int, request: Request):
+def get_post_by_id(post_id: int, request: Request):
     user_id = getattr(request.state, "user_id", 0)
     cursor, conn = get_db_cursor()
     try:

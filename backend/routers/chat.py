@@ -4,6 +4,7 @@ from database import get_db_cursor
 from utils.auth import decode_token
 from utils.notification import create_notification
 import json
+import asyncio
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -41,6 +42,45 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
+def _save_message(user_id: int, receiver_id: int, content: str):
+    """同步：保存消息到数据库，在线程池中执行"""
+    cursor, conn = get_db_cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO messages (sender_id, receiver_id, content) VALUES (%s, %s, %s)",
+            (user_id, receiver_id, content)
+        )
+        conn.commit()
+        message_id = cursor.lastrowid
+
+        cursor.execute(
+            "SELECT created_at FROM messages WHERE id = %s",
+            (message_id,)
+        )
+        row = cursor.fetchone()
+        created_at = str(row["created_at"]) if row else ""
+        return message_id, created_at
+    finally:
+        conn.close()
+
+
+def _send_chat_notification(user_id: int, receiver_id: int):
+    """同步：创建聊天通知，在线程池中执行"""
+    cursor, conn = get_db_cursor()
+    try:
+        cursor.execute("SELECT nickname FROM users WHERE id = %s", (user_id,))
+        sender_row = cursor.fetchone()
+        sender_nickname = sender_row["nickname"] if sender_row else "用户"
+        create_notification(
+            user_id=receiver_id,
+            actor_id=user_id,
+            ntype="chat",
+            message=f"{sender_nickname} 给你发了私信"
+        )
+    finally:
+        conn.close()
+
+
 async def websocket_chat(websocket: WebSocket, token: str = None):
     if not token:
         await websocket.close(code=4001)
@@ -73,23 +113,10 @@ async def websocket_chat(websocket: WebSocket, token: str = None):
                 if not receiver_id or not content:
                     continue
 
-                cursor, conn = get_db_cursor()
-                try:
-                    cursor.execute(
-                        "INSERT INTO messages (sender_id, receiver_id, content) VALUES (%s, %s, %s)",
-                        (user_id, receiver_id, content)
-                    )
-                    conn.commit()
-                    message_id = cursor.lastrowid
-
-                    cursor.execute(
-                        "SELECT created_at FROM messages WHERE id = %s",
-                        (message_id,)
-                    )
-                    row = cursor.fetchone()
-                    created_at = str(row["created_at"]) if row else ""
-                finally:
-                    conn.close()
+                # 在线程池中执行数据库操作，不阻塞事件循环
+                message_id, created_at = await asyncio.to_thread(
+                    _save_message, user_id, receiver_id, content
+                )
 
                 msg_data = {
                     "type": "message",
@@ -100,29 +127,19 @@ async def websocket_chat(websocket: WebSocket, token: str = None):
                     "created_at": created_at
                 }
 
-                await manager.send_to_user(receiver_id, msg_data)
+                if user_id != receiver_id:
+                    await manager.send_to_user(receiver_id, msg_data)
                 await websocket.send_json(msg_data)
 
-                cursor2, conn2 = get_db_cursor()
-                try:
-                    cursor2.execute("SELECT nickname FROM users WHERE id = %s", (user_id,))
-                    sender_row = cursor2.fetchone()
-                    sender_nickname = sender_row["nickname"] if sender_row else "用户"
-                    create_notification(
-                        user_id=receiver_id,
-                        actor_id=user_id,
-                        ntype="chat",
-                        message=f"{sender_nickname} 给你发了私信"
-                    )
-                finally:
-                    conn2.close()
+                # 在线程池中发送通知，不阻塞事件循环
+                await asyncio.to_thread(_send_chat_notification, user_id, receiver_id)
     except WebSocketDisconnect:
         manager.disconnect(user_id)
         await manager.broadcast_online_status(user_id, False)
 
 
 @router.get("/conversations")
-async def get_conversations(request: Request):
+def get_conversations(request: Request):
     user_id = getattr(request.state, "user_id", 0)
     if user_id == 0:
         return {"code": 401, "message": "未认证或Token失效"}
@@ -154,7 +171,7 @@ async def get_conversations(request: Request):
 
 
 @router.get("/messages/{other_user_id}")
-async def get_messages(other_user_id: int, request: Request, page: int = 1, page_size: int = 20):
+def get_messages(other_user_id: int, request: Request, page: int = 1, page_size: int = 20):
     user_id = getattr(request.state, "user_id", 0)
     if user_id == 0:
         return {"code": 401, "message": "未认证或Token失效"}
@@ -187,7 +204,7 @@ async def get_messages(other_user_id: int, request: Request, page: int = 1, page
 
 
 @router.put("/read/{other_user_id}")
-async def mark_as_read(other_user_id: int, request: Request):
+def mark_as_read(other_user_id: int, request: Request):
     user_id = getattr(request.state, "user_id", 0)
     if user_id == 0:
         return {"code": 401, "message": "未认证或Token失效"}
@@ -207,7 +224,7 @@ class SendMessageReq(BaseModel):
 
 
 @router.post("/send")
-async def send_message(req: SendMessageReq, request: Request):
+def send_message(req: SendMessageReq, request: Request):
     user_id = getattr(request.state, "user_id", 0)
     if user_id == 0:
         return {"code": 401, "message": "未认证或Token失效"}
@@ -228,17 +245,16 @@ async def send_message(req: SendMessageReq, request: Request):
             (message_id,)
         )
         msg = cursor.fetchone()
-
-        msg_data = {
-            "type": "message",
-            "message_id": message_id,
-            "sender_id": user_id,
-            "receiver_id": req.receiver_id,
-            "content": req.content.strip(),
-            "created_at": str(msg["created_at"]) if msg else ""
-        }
-        await manager.send_to_user(req.receiver_id, msg_data)
-
-        return {"code": 200, "message": "发送成功", "data": msg}
     finally:
         conn.close()
+
+    msg_data = {
+        "type": "message",
+        "message_id": msg["id"] if msg else 0,
+        "sender_id": user_id,
+        "receiver_id": req.receiver_id,
+        "content": req.content.strip(),
+        "created_at": str(msg["created_at"]) if msg else ""
+    }
+
+    return {"code": 200, "message": "发送成功", "data": msg}
