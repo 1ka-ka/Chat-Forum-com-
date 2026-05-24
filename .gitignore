@@ -1,0 +1,39 @@
+# Node
+node_modules/
+dist/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Uploads (keep directory structure)
+uploads/images/*
+uploads/avatars/*
+!uploads/images/.gitkeep
+!uploads/avatars/.gitkeep
+
+# Logs
+logs/*.log
+
+# Config with secrets
+config/config.json
+!config/config.json.example
+
+# Environment
+.env
+.env.local
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+*.sln
